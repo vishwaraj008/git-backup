@@ -3,7 +3,7 @@
   "displayName": "Git Backup",
   "description": "Backup selected project files to a chosen location",
   "publisher": "VishwarajSingh",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "icon": "gitBackup.png",
   "engines": {
     "vscode": "^1.102.0"
