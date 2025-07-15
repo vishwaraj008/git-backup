@@ -6,29 +6,148 @@ const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 /**
- * Get all files in the project, excluding common directories and files
+ * Parse .rohitignore file and return patterns
  */
-async function getAllProjectFiles(dirPath, options) {
+function parseRohitIgnore(workspaceRoot) {
+    const rohitIgnorePath = path.join(workspaceRoot, '.rohitignore');
+    const patterns = [];
+    if (!fs.existsSync(rohitIgnorePath)) {
+        return patterns;
+    }
+    try {
+        const content = fs.readFileSync(rohitIgnorePath, 'utf8');
+        const lines = content.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+                const isDirectory = trimmed.endsWith('/');
+                const pattern = isDirectory ? trimmed.slice(0, -1) : trimmed;
+                const isGlob = pattern.includes('*') || pattern.includes('?');
+                patterns.push({
+                    pattern,
+                    isDirectory,
+                    isGlob
+                });
+            }
+        }
+    }
+    catch (error) {
+        console.error('Error reading .rohitignore:', error);
+    }
+    return patterns;
+}
+/**
+ * Check if a file or directory should be ignored based on .rohitignore patterns
+ */
+function shouldIgnore(itemPath, workspaceRoot, isDirectory, rohitIgnorePatterns) {
+    const relativePath = path.relative(workspaceRoot, itemPath);
+    const itemName = path.basename(itemPath);
+    for (const pattern of rohitIgnorePatterns) {
+        // Skip directory patterns for files and vice versa
+        if (pattern.isDirectory && !isDirectory) {
+            continue;
+        }
+        if (pattern.isGlob) {
+            // Simple glob matching (basic * support)
+            const regexPattern = pattern.pattern.replace(/\*/g, '.*');
+            const regex = new RegExp(`^${regexPattern}$`);
+            if (regex.test(itemName) || regex.test(relativePath)) {
+                return true;
+            }
+        }
+        else {
+            // Exact match
+            if (itemName === pattern.pattern || relativePath === pattern.pattern) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+/**
+ * Get files and directories in a specific directory
+ */
+function getDirectoryContents(dirPath, workspaceRoot, options, rohitIgnorePatterns) {
+    const items = [];
+    const ignoredDirs = ['.git', 'node_modules', '.vscode', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'target', 'bin', 'obj'];
+    const ignoredFiles = ['.DS_Store', 'Thumbs.db', '.gitignore', '.eslintrc', '.prettierrc', 'package-lock.json', 'yarn.lock'];
+    try {
+        const entries = fs.readdirSync(dirPath);
+        for (const entry of entries) {
+            const itemPath = path.join(dirPath, entry);
+            const stat = fs.statSync(itemPath);
+            const isDirectory = stat.isDirectory();
+            // Skip hidden files/folders if not included
+            if (!options.includeHiddenFiles && entry.startsWith('.')) {
+                continue;
+            }
+            // Skip default ignored items
+            if (isDirectory && ignoredDirs.includes(entry)) {
+                continue;
+            }
+            if (!isDirectory && ignoredFiles.includes(entry)) {
+                continue;
+            }
+            // Skip items matching .rohitignore patterns
+            if (shouldIgnore(itemPath, workspaceRoot, isDirectory, rohitIgnorePatterns)) {
+                continue;
+            }
+            const relativePath = path.relative(workspaceRoot, itemPath);
+            const icon = isDirectory ? '📁' : '📄';
+            items.push({
+                label: `${icon} ${entry}`,
+                description: relativePath,
+                detail: itemPath,
+                filePath: itemPath,
+                isDirectory: isDirectory
+            });
+        }
+    }
+    catch (error) {
+        console.error(`Error reading directory ${dirPath}:`, error);
+    }
+    return items.sort((a, b) => {
+        // Directories first, then files
+        if (a.isDirectory !== b.isDirectory) {
+            return a.isDirectory ? -1 : 1;
+        }
+        return a.label.localeCompare(b.label);
+    });
+}
+/**
+ * Get all files recursively from a directory
+ */
+function getAllFilesInDirectory(dirPath, workspaceRoot, options, rohitIgnorePatterns) {
     const files = [];
     const ignoredDirs = ['.git', 'node_modules', '.vscode', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'target', 'bin', 'obj'];
     const ignoredFiles = ['.DS_Store', 'Thumbs.db', '.gitignore', '.eslintrc', '.prettierrc', 'package-lock.json', 'yarn.lock'];
     function scanDirectory(currentPath) {
         try {
-            const items = fs.readdirSync(currentPath);
-            for (const item of items) {
-                const itemPath = path.join(currentPath, item);
+            const entries = fs.readdirSync(currentPath);
+            for (const entry of entries) {
+                const itemPath = path.join(currentPath, entry);
                 const stat = fs.statSync(itemPath);
-                if (stat.isDirectory()) {
-                    // Skip ignored directories
-                    if (!ignoredDirs.includes(item) && (options.includeHiddenFiles || !item.startsWith('.'))) {
-                        scanDirectory(itemPath);
-                    }
+                const isDirectory = stat.isDirectory();
+                // Skip hidden files/folders if not included
+                if (!options.includeHiddenFiles && entry.startsWith('.')) {
+                    continue;
                 }
-                else if (stat.isFile()) {
-                    // Skip ignored files and optionally hidden files
-                    if (!ignoredFiles.includes(item) && (options.includeHiddenFiles || !item.startsWith('.'))) {
-                        files.push(itemPath);
-                    }
+                // Skip default ignored items
+                if (isDirectory && ignoredDirs.includes(entry)) {
+                    continue;
+                }
+                if (!isDirectory && ignoredFiles.includes(entry)) {
+                    continue;
+                }
+                // Skip items matching .rohitignore patterns
+                if (shouldIgnore(itemPath, workspaceRoot, isDirectory, rohitIgnorePatterns)) {
+                    continue;
+                }
+                if (isDirectory) {
+                    scanDirectory(itemPath);
+                }
+                else {
+                    files.push(itemPath);
                 }
             }
         }
@@ -37,7 +156,130 @@ async function getAllProjectFiles(dirPath, options) {
         }
     }
     scanDirectory(dirPath);
-    return files.sort();
+    return files;
+}
+/**
+ * Check if an item is selected (file or any file in folder)
+ */
+function isItemSelected(itemPath, isDirectory, selectedFiles, workspaceRoot, options, rohitIgnorePatterns) {
+    if (!isDirectory) {
+        return selectedFiles.some(f => f.filePath === itemPath);
+    }
+    // For directories, check if all files in the directory are selected
+    const allFilesInDir = getAllFilesInDirectory(itemPath, workspaceRoot, options, rohitIgnorePatterns);
+    if (allFilesInDir.length === 0) {
+        return false;
+    }
+    return allFilesInDir.every(filePath => selectedFiles.some(f => f.filePath === filePath));
+}
+/**
+ * Navigate through directories and select files
+ */
+async function navigateAndSelectFiles(workspaceRoot, options, rohitIgnorePatterns) {
+    const selectedFiles = [];
+    let currentPath = workspaceRoot;
+    while (true) {
+        const items = getDirectoryContents(currentPath, workspaceRoot, options, rohitIgnorePatterns);
+        // Update labels with checkbox indicators
+        for (const item of items) {
+            const isSelected = isItemSelected(item.filePath, item.isDirectory, selectedFiles, workspaceRoot, options, rohitIgnorePatterns);
+            const checkbox = isSelected ? '☑️' : '☐';
+            const icon = item.isDirectory ? '📁' : '📄';
+            const baseName = path.basename(item.filePath);
+            item.label = `${checkbox} ${icon} ${baseName}`;
+            item.isSelected = isSelected;
+        }
+        // Add parent directory option if not at root
+        if (currentPath !== workspaceRoot) {
+            const parentPath = path.dirname(currentPath);
+            items.unshift({
+                label: '📁 .. (Parent Directory)',
+                description: 'Go back to parent directory',
+                detail: parentPath,
+                filePath: parentPath,
+                isDirectory: true,
+                isParent: true
+            });
+        }
+        // Add "Done" option
+        items.push({
+            label: '✅ Done (Finish Selection)',
+            description: `${selectedFiles.length} file(s) selected`,
+            detail: 'done',
+            filePath: 'done',
+            isDirectory: false
+        });
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: `Navigate: ${path.relative(workspaceRoot, currentPath) || 'Root'} | Selected: ${selectedFiles.length} files`
+        });
+        if (!selected) {
+            return []; // User cancelled
+        }
+        if (selected.filePath === 'done') {
+            break;
+        }
+        if (selected.isParent) {
+            currentPath = selected.filePath;
+        }
+        else if (selected.isDirectory) {
+            // Check if we should navigate or toggle selection
+            const action = await vscode.window.showQuickPick([
+                { label: '📂 Enter Folder', description: 'Navigate into this folder' },
+                { label: '☑️ Toggle Selection', description: 'Select/deselect all files in this folder' }
+            ], {
+                placeHolder: `What would you like to do with "${path.basename(selected.filePath)}"?`
+            });
+            if (!action) {
+                continue; // User cancelled, stay in current directory
+            }
+            if (action.label.includes('Enter Folder')) {
+                currentPath = selected.filePath;
+            }
+            else {
+                // Toggle folder selection
+                const allFilesInDir = getAllFilesInDirectory(selected.filePath, workspaceRoot, options, rohitIgnorePatterns);
+                const isCurrentlySelected = selected.isSelected;
+                if (isCurrentlySelected) {
+                    // Remove all files in this directory
+                    for (const filePath of allFilesInDir) {
+                        const index = selectedFiles.findIndex(f => f.filePath === filePath);
+                        if (index >= 0) {
+                            selectedFiles.splice(index, 1);
+                        }
+                    }
+                    vscode.window.showInformationMessage(`Deselected folder: ${path.basename(selected.filePath)} (${allFilesInDir.length} files)`);
+                }
+                else {
+                    // Add all files in this directory
+                    for (const filePath of allFilesInDir) {
+                        if (!selectedFiles.some(f => f.filePath === filePath)) {
+                            selectedFiles.push({
+                                label: path.basename(filePath),
+                                description: path.relative(workspaceRoot, filePath),
+                                detail: filePath,
+                                filePath: filePath,
+                                isDirectory: false
+                            });
+                        }
+                    }
+                    vscode.window.showInformationMessage(`Selected folder: ${path.basename(selected.filePath)} (${allFilesInDir.length} files)`);
+                }
+            }
+        }
+        else {
+            // Toggle file selection
+            const existingIndex = selectedFiles.findIndex(f => f.filePath === selected.filePath);
+            if (existingIndex >= 0) {
+                selectedFiles.splice(existingIndex, 1);
+                vscode.window.showInformationMessage(`Removed: ${path.basename(selected.filePath)}`);
+            }
+            else {
+                selectedFiles.push(selected);
+                vscode.window.showInformationMessage(`Added: ${path.basename(selected.filePath)}`);
+            }
+        }
+    }
+    return selectedFiles;
 }
 /**
  * Create a backup folder with timestamp if requested
@@ -125,24 +367,10 @@ async function backupProject() {
         if (!options) {
             return; // User cancelled
         }
-        // Get all files in the workspace
-        const allFiles = await getAllProjectFiles(workspaceRoot, options);
-        if (allFiles.length === 0) {
-            vscode.window.showErrorMessage('No files found in the project.');
-            return;
-        }
-        // Create quick pick items for file selection
-        const quickPickItems = allFiles.map(file => ({
-            label: path.basename(file),
-            description: path.relative(workspaceRoot, file),
-            detail: file,
-            filePath: file
-        }));
-        // Show multi-select quick pick for files
-        const selectedItems = await vscode.window.showQuickPick(quickPickItems, {
-            canPickMany: true,
-            placeHolder: 'Select files to backup (use Ctrl/Cmd+Click for multiple selection)'
-        });
+        // Parse .rohitignore file
+        const rohitIgnorePatterns = parseRohitIgnore(workspaceRoot);
+        // Navigate and select files using tree navigation
+        const selectedItems = await navigateAndSelectFiles(workspaceRoot, options, rohitIgnorePatterns);
         if (!selectedItems || selectedItems.length === 0) {
             vscode.window.showErrorMessage('No files selected for backup.');
             return;

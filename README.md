@@ -4,13 +4,15 @@ A VS Code extension that allows you to easily backup selected project files to a
 
 ## Features
 
-- **Selective File Backup**: Choose exactly which files to backup from your project
-- **Preserve Directory Structure**: Optionally maintain the original folder structure in your backup
-- **Hidden Files Support**: Include or exclude hidden files and folders
-- **Timestamped Backups**: Create timestamped backup folders for better organization
-- **Progress Tracking**: Visual progress indicator during backup operations
-- **Duplicate Handling**: Automatically handles file name conflicts
-- **Smart Filtering**: Excludes common build artifacts and system files by default
+-  **Tree Navigation**: Navigate through your project folder structure like a file explorer
+-  **Selective File Backup**: Choose exactly which files to backup from your project
+-  **Preserve Directory Structure**: Optionally maintain the original folder structure in your backup
+-  **Hidden Files Support**: Include or exclude hidden files and folders
+-  **Timestamped Backups**: Create timestamped backup folders for better organization
+-  **Progress Tracking**: Visual progress indicator during backup operations
+-  **Duplicate Handling**: Automatically handles file name conflicts
+-  **Smart Filtering**: Excludes common build artifacts and system files by default
+-  **Custom Ignore Patterns**: Support for `.rohitignore` file to exclude specific files and folders
 
 ## How to Use
 
@@ -20,7 +22,13 @@ A VS Code extension that allows you to easily backup selected project files to a
    - Preserve directory structure (Yes/No)
    - Include hidden files (Yes/No)
    - Create timestamped folder (Yes/No)
-4. **Select Files**: Multi-select files from the quick pick menu (use Ctrl/Cmd+Click)
+4. **Navigate and Select Files**: Use the tree navigation to browse folders and select files:
+   - **Visual Selection**: Checkboxes show selection status (☑️ = selected, ☐ = not selected)
+   - **Folder Actions**: Click on folders to choose "Enter Folder" or "Toggle Selection"
+   - **Bulk Selection**: Select entire folders to include all files within them
+   - **Individual Files**: Click on files to select/deselect them for backup
+   - **Navigation**: Use ".. (Parent Directory)" to go back
+   - **Completion**: Click "Done" when you've selected all desired files
 5. **Choose Destination**: Select where you want to save the backup
 6. **Done!**: Your files are backed up with a progress indicator
 
@@ -53,6 +61,18 @@ The extension automatically excludes common build artifacts and system files:
 - `.DS_Store`, `Thumbs.db`
 - `.gitignore`, `.eslintrc`, `.prettierrc`
 - `package-lock.json`, `yarn.lock`
+
+## .rohitignore File
+
+You can create a `.rohitignore` file in your project root to specify custom files and folders to exclude from backup selection. This works similar to `.gitignore` but specifically for the backup process.
+
+### Pattern Rules
+
+- **Comments**: Lines starting with `#` are ignored
+- **Files**: Specify filename directly (e.g., `secrets.txt`)
+- **Directories**: Add trailing slash (e.g., `temp/`)
+- **Wildcards**: Use `*` for any characters (e.g., `*.log`)
+- **Relative Paths**: Specify paths relative to project root (e.g., `src/generated/`)
 
 ## Requirements
 
@@ -104,10 +124,15 @@ This extension is released under the MIT License.
 ### 0.0.1
 
 - Initial release of Git Backup extension
-- Selective file backup with multi-select support
-- Configurable backup options
-- Progress tracking and error handling
-- Smart file filtering and conflict resolution
+- **Tree Navigation**: Browse project folders like a file explorer
+- **Visual Selection**: Checkbox indicators show selection status (☑️/☐)
+- **Folder Selection**: Select entire folders to include all files within
+- **Selective File Backup**: Choose exactly which files to backup
+- **Custom Ignore Patterns**: Support for `.rohitignore` file
+- **Configurable Options**: Preserve structure, hidden files, timestamps
+- **Progress Tracking**: Visual progress indicator during backup
+- **Smart Filtering**: Excludes common build artifacts automatically
+- **Conflict Resolution**: Handles duplicate file names gracefully
 
 ---
 
